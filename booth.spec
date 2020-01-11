@@ -22,7 +22,7 @@
 %bcond_with html_man
 %bcond_with glue
 
-%global specver 6
+%global specver 7
 %global boothver 1.0
 # set following to the actual commit or, for final release, concatenate
 # "boothver" macro to "v" (will yield a tag per the convention)
@@ -69,7 +69,7 @@ Patch5: bz1366616-local_site_resolved_prevents_segfault.patch
 
 # imposed by the same statement in pacemaker.spec
 %if 0%{?rhel} > 0
-ExclusiveArch: i686 x86_64 s390x
+ExclusiveArch: i686 x86_64 ppc64le s390x
 %endif
 
 # direct build process dependencies
@@ -274,6 +274,10 @@ VERBOSE=1 make check
 /usr/lib/ocf/resource.d/booth/sharedrsc
 
 %changelog
+* Mon Mar 27 2017 Jan Pokorný <jpokorny+rpm-booth@redhat.com> - 1.0-7.ef769ef.git
+- build for ppc64le
+  Resolves: rhbz#1402563
+
 * Thu Sep 15 2016 Jan Pokorný <jpokorny+rpm-booth@redhat.com> - 1.0-6.ef769ef.git
 - fix an issue with identity self-determination based on match
   between the addresses assigned at host and the configured addresses
