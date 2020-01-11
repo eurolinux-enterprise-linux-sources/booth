@@ -1,0 +1,203 @@
+#!/bin/bash
+# vim: set sw=4 :
+#
+#	Resource Agent for BOOTH site daemon.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of version 2 of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# Further, this software is distributed without any warranty that it is
+# free of the rightful claim of any third person regarding infringement
+# or the like.  Any license provided herein, whether implied or
+# otherwise, applies only to this software file.  Patent licenses, if
+# any, provided herein do not apply to combinations of this program with
+# other software, or any other product whatsoever.
+#
+# You should have received a copy of the GNU General Public License along
+# with this program; if not, write to the Free Software Foundation, Inc.,
+# 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+#
+
+#######################################################################
+# Initialization:
+
+DEFAULT_BIN="boothd"
+DEFAULT_CONF="/etc/booth/booth.conf"
+
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/lib/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/ocf-shellfuncs
+
+#######################################################################
+
+booth_site_meta_data() {
+	cat <<END
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="booth-site" version="0.9">
+<version>1.0</version>
+
+
+<longdesc lang="en">
+This Resource Agent can control the BOOTH site daemon.
+It assumes that the binary boothd is in your default PATH.
+In most cases, it should be run as a primitive resource.
+</longdesc>
+<shortdesc lang="en">BOOTH site daemon</shortdesc>
+
+<parameters>
+
+<parameter name="config" unique="1">
+<longdesc lang="en">
+The configuration name (or configuration filename) to use.
+</longdesc>
+<shortdesc lang="en">BOOTH Options</shortdesc>
+<content type="string" default="$DEFAULT_CONF" />
+</parameter>
+
+<parameter name="args" unique="1">
+<longdesc lang="en">
+Any additional options to start the BOOTH daemon with
+</longdesc>
+<shortdesc lang="en">BOOTH Options</shortdesc>
+<content type="string" default="" />
+</parameter>
+
+<parameter name="daemon" unique="1">
+<longdesc lang="en">
+The daemon to start
+</longdesc>
+<shortdesc lang="en">The daemon to start</shortdesc>
+<content type="string" default="$DEFAULT_BIN" />
+</parameter>
+
+</parameters>
+
+<actions>
+<action name="start"        timeout="20" />
+<action name="stop"         timeout="20" />
+<action name="restart"      timeout="20" />
+<action name="reload"       timeout="20" />
+<action name="monitor"      timeout="20" interval="10" depth="0" start-delay="0" />
+<action name="meta-data"    timeout="5" />
+<action name="validate-all"   timeout="30" />
+</actions>
+</resource-agent>
+END
+}
+
+#######################################################################
+
+booth_site_usage() {
+	cat <<END
+usage: $0 {start|stop|restart|reload|monitor|validate-all|meta-data}
+
+Expects to have a fully populated OCF RA-compliant environment set.
+END
+}
+
+grep_cmd_pid() {
+	ps -o pid,cmd -e | grep -w "$@" |
+		awk '{print $1}'
+}
+get_booth_pid() {
+	local pid
+	pid=`grep_cmd_pid "[b]oothd.*$OCF_RESKEY_config"`
+	if [ -z "$pid" ]; then
+		grep_cmd_pid "[b]oothd site$"
+	else
+		echo $pid
+	fi
+}
+is_booth_running() {
+	[ -n "`get_booth_pid`" ]
+}
+
+booth_site_status() {
+	is_booth_running ||
+		return $OCF_NOT_RUNNING
+}
+
+booth_monitor_basic() {
+	booth list -c $OCF_RESKEY_config > /dev/null
+}
+
+booth_site_start() {
+	local rc
+
+	booth_site_status
+	rc=$?
+
+	case $rc in
+	0)
+		ocf_log info "boothd already running"
+		return $OCF_SUCCESS
+	;;
+	$OCF_NOT_RUNNING) ;;
+	esac
+
+	$OCF_RESKEY_daemon daemon -c $OCF_RESKEY_config $OCF_RESKEY_args ||
+		return $OCF_ERR_GENERIC
+	sleep 1
+	while ! booth_monitor_basic; do
+		sleep 1
+	done
+
+	return $OCF_SUCCESS
+}
+
+booth_site_stop() {
+	local pid
+	pid=`get_booth_pid`
+	if [ -z "$pid" ]; then
+		ocf_log info "boothd already stopped"
+		return $OCF_SUCCESS
+	fi
+
+	ocf_stop_processes TERM 5 $pid
+	while is_booth_running; do
+		sleep 1
+	done
+	return $OCF_SUCCESS
+}
+
+booth_site_restart() {
+	booth_site_stop
+	booth_site_start
+}
+
+booth_site_reload() {
+	booth_site_restart
+}
+
+booth_site_monitor() {
+	booth_site_status
+	case $? in
+	0) return $OCF_SUCCESS ;;
+	$OCF_NOT_RUNNING) return $OCF_NOT_RUNNING ;;
+	esac
+}
+
+booth_site_validate_all() {
+	if ! test -f $OCF_RESKEY_config; then
+		ocf_log err "$OCF_RESKEY_config does not exist"
+		return $OCF_ERR_INSTALLED
+	fi
+
+	if ocf_is_true $OCF_RESKEY_CRM_meta_globally_unique; then
+		ocf_log err "$OCF_RESOURCE_INSTANCE must be configured with the globally_unique=false meta attribute"
+		return $OCF_ERR_CONFIGURED
+	fi
+
+	return $OCF_SUCCESS
+}
+
+: ${OCF_RESKEY_daemon:=$DEFAULT_BIN}
+: ${OCF_RESKEY_config:=$DEFAULT_CONF}
+OCF_REQUIRED_BINARIES=${OCF_RESKEY_daemon}
+
+ocf_rarun $*

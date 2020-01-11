@@ -1,0 +1,25 @@
+From 6bc22016a368faac697274b0ff764b309489d8ea Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20Pokorn=C3=BD?= <jpokorny@redhat.com>
+Date: Fri, 27 May 2016 22:44:34 +0200
+Subject: [PATCH 3/4] test: live_test: use a defined literal uniformly
+
+---
+ test/live_test.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/live_test.sh b/test/live_test.sh
+index 4425bfb..5ee918e 100755
+--- a/test/live_test.sh
++++ b/test/live_test.sh
+@@ -418,7 +418,7 @@ show_pref() {
+ 	run_site $1 crm configure show $PREFNAME > /dev/null
+ }
+ repair_external_prog() {
+-	run_site $1 crm configure delete __pref_booth_live_test
++	run_site $1 crm configure delete $PREFNAME
+ }
+ get_tkt() {
+ 	grep "^ticket=" | head -1 | sed 's/ticket=//;s/"//g'
+-- 
+2.4.11
+

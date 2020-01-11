@@ -1,0 +1,22 @@
+# vim: ft=sh et :
+#
+# Checks whether Pacemaker gets correct command lines.
+
+
+ticket:
+    state               ST_FOLLOWER
+    current_term        40
+    term_expires        time(0) + 30
+
+
+message0:              
+    header.cmd          OP_HEARTBEAT
+    header.from         booth_conf->site[2].site_id
+    header.result       0
+    ticket.term         44
+    ticket.leader       booth_conf->site[2].site_id
+    #getenv("UNIT_TEST_AUX")  "ballot 99 owner +" 
+
+
+finally:
+    current_term        44

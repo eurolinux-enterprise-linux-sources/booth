@@ -1,0 +1,64 @@
+From b9560cc74c99e96f97490608b292f23735252aaf Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20Pokorn=C3=BD?= <jpokorny@redhat.com>
+Date: Wed, 14 Sep 2016 22:31:56 +0200
+Subject: [PATCH] High: zealous local address matching with the same subnet
+ entries
+
+Previously, having booth components on the same subnet could seriously
+confuse self-determination of those tolerating fuzziness when doing so
+(i.e., not site nor arbitrator).
+
+It would be the case when there are two (or more) addresses sharing the
+same network part of the address as one of the actual hosts's addresses
+(assigned to one of its interfaces), and the exactly matching one is
+listed _after_ at least a single network-part-match-only one ("fuzzy"
+match).  Due to the original requirement that any subsequent candidate
+would have to beat a running winner in the length of the network prefix,
+such exact match could never have been tested and hence missed.
+(IOW, algorithm used to search for local, not global maximum in some
+circumstances).
+
+Now we allow further examination of the candidate with the same length
+of the network prefix as a running winner, which -- moreover -- cannot
+be the exact match because now, it terminates the search immediately.
+---
+ src/transport.c | 22 ++++++++++++++--------
+ 1 file changed, 14 insertions(+), 8 deletions(-)
+
+diff --git a/src/transport.c b/src/transport.c
+index b3e4432..1d620a0 100644
+--- a/src/transport.c
++++ b/src/transport.c
+@@ -237,15 +237,21 @@ int _find_myself(int family, struct booth_site **mep, int fuzzy_allowed)
+ 							BOOTH_IPADDR_LEN);
+ 				}
+ 
+-				/* First try with exact addresses, then optionally with subnet matching. */
+-				if (ifa->ifa_prefixlen > address_bits_matched) {
+-					find_address(ipaddr,
+-							ifa->ifa_family, ifa->ifa_prefixlen,
+-							fuzzy_allowed, &me, &address_bits_matched);
+-					if (me) {
+-						log_debug("found myself at %s (%d bits matched)",
+-								site_string(me), address_bits_matched);
++				if (ifa->ifa_prefixlen >= address_bits_matched) {
++					/* First attempt exact match with addresses in the config,
++					   then optionally with subnet matching. */
++					if (find_address(ipaddr,
++							 ifa->ifa_family, ifa->ifa_prefixlen,
++							 fuzzy_allowed, &me, &address_bits_matched)
++							== EXACT_MATCH) {
++						log_debug("found exactly myself at %s (%d bits matched)",
++							  site_string(me), address_bits_matched);
++						break;
+ 					}
++					if (me)
++						log_debug("running winner to determine myself at %s"
++							  " (%d bits matched)",
++							  site_string(me), address_bits_matched);
+ 				}
+ 			}
+ 			h = NLMSG_NEXT(h, status);
+-- 
+2.4.11
+

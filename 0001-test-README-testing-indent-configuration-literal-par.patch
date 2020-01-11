@@ -1,0 +1,40 @@
+From f3e4db6a6751e38084e305093a3452512ba40336 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20Pokorn=C3=BD?= <jpokorny@redhat.com>
+Date: Fri, 27 May 2016 22:51:14 +0200
+Subject: [PATCH 1/4] test: README-testing: indent configuration (~literal
+ paragraph)
+
+---
+ README-testing | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/README-testing b/README-testing
+index ac768e5..81c4158 100644
+--- a/README-testing
++++ b/README-testing
+@@ -47,16 +47,16 @@ is used to manipulate iptables rules.
+ This is a sample pacemaker configuration for a single-node
+ cluster:
+ 
+-primitive booth ocf:pacemaker:booth-site
+-primitive d-src1 ocf:heartbeat:Dummy
+-rsc_ticket global-d-src1 ticket-A: d-src1
++    primitive booth ocf:pacemaker:booth-site
++    primitive d-src1 ocf:heartbeat:Dummy
++    rsc_ticket global-d-src1 ticket-A: d-src1
+ 
+ Additionally, you may also add an ocf:booth:sharedrsc resource to
+ also check that the ticket is granted always to only one site:
+ 
+-primitive shared ocf:booth:sharedrsc \
+-        params dir="10.2.13.82:/var/tmp/boothtestdir"
+-rsc_ticket global-shared ticket-A: shared
++    primitive shared ocf:booth:sharedrsc \
++            params dir="10.2.13.82:/var/tmp/boothtestdir"
++    rsc_ticket global-shared ticket-A: shared
+ 
+ Please adjust to your environment.
+ 
+-- 
+2.4.11
+

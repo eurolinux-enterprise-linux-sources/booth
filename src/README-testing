@@ -1,0 +1,217 @@
+There's a booth-test package which contains two types of tests.
+
+It installs the necessary files into `/usr/share/booth/tests`.
+
+=== Live tests (booth operation)
+
+BEWARE: Run this with _test_ clusters only!
+
+The live testing utility tests booth operation using the given
+`booth.conf`:
+
+	$ /usr/share/booth/tests/test/live_test.sh booth.conf
+
+It is possible to run only specific tests. Run the script without
+arguments to see usage and the list of tests and netem network
+emulation functions.
+
+There are some restrictions on how booth.conf is formatted.
+There could be several tickets defined, but only the first ticket
+is used for testing. This ticket must have expire and timeout
+parameters configured.
+
+Example booth.conf:
+
+------------
+transport="UDP"
+port="9929"
+arbitrator="10.2.12.53"
+arbitrator="10.2.13.82"
+site="10.2.12.101"
+site="10.2.13.101"
+site="10.121.187.99"
+
+ticket="ticket-A"
+	expire = 30
+	timeout = 3
+	retries = 3
+	before-acquire-handler = /usr/share/booth/service-runnable d-src1
+------------
+
+A split brain condition is also tested. For that to work, all
+sites need `iptables` installed. The supplied script `booth_path`
+is used to manipulate iptables rules.
+
+==== Pacemaker configuration
+
+This is a sample pacemaker configuration for a single-node
+cluster:
+
+primitive booth ocf:pacemaker:booth-site
+primitive d-src1 ocf:heartbeat:Dummy
+rsc_ticket global-d-src1 ticket-A: d-src1
+
+Additionally, you may also add an ocf:booth:sharedrsc resource to
+also check that the ticket is granted always to only one site:
+
+primitive shared ocf:booth:sharedrsc \
+        params dir="10.2.13.82:/var/tmp/boothtestdir"
+rsc_ticket global-shared ticket-A: shared
+
+Please adjust to your environment.
+
+==== Network environment emulation
+
+To introduce packet loss or network delays, set the NETEM_ENV
+environment variable. There are currently three netem network
+emulation settings supported:
+
+- loss: all servers emulate packet loss (30% by default)
+
+- single_loss: the first site in the configuration emulates
+  packet loss (30% by default)
+
+- net_delay: all servers emulate packet delay (100ms by default
+  with random variation of 10%)
+
+The settings can be supplied by adding ':' to the emulator name.
+For instance:
+
+	# NETEM_ENV=loss:50 /usr/share/booth/tests/test/live_test.sh booth.conf
+
+It is not necessary to run the test script on one of the sites.
+Just copy the script and make the test `booth.conf` available
+locally:
+
+	$ scp testsite:/usr/share/booth/tests/test/live_test.sh .
+	$ scp testsite:/etc/booth/booth.conf .
+	$ sh live_test.sh booth.conf
+
+You need at least two sites and one arbitrator.
+
+The configuration can contain just one ticket.
+
+It is not necessary to configure the `before-acquire-handler`.
+
+Notes:
+
+- (BEWARE!) the supplied configuration files is copied to
+  /etc/booth/booth.conf to all sites/arbitrators thus overwriting
+  any existing configuration
+
+- the utility uses ssh to manage booth at all sites/arbitrators
+  and logs in as user `root`
+
+- it is required that ssh public authentication works without
+  providing the passphrase (otherwise it is impractical)
+
+- the log file is ./test_booth.log (it is actually a shell trace,
+  with timestamps if you're running bash)
+
+- in case one of the tests fail, hb_report is created
+
+If you want to open a bug report, please attach all hb_reports
+and `test_booth.log`.
+
+
+
+
+=== Simple tests (commandline, config file)
+
+
+Run (as non-root)
+
+    # python test/runtests.py
+
+to run the tests written in python.
+
+
+
+
+=== Unit tests
+
+These use gdb and pexpect to set boothd state to some configured value,
+injecting some input and looking at the output.
+
+    # python script/unit-test.py src/boothd unit-tests/
+
+Or, if using the 'booth-test' RPM,
+
+    # python unit-test.py src/boothd unit-tests/
+
+This must (currently?) be run as a non-root user; another optional argument is
+the test to start from, eg. '003'.
+
+
+Basically, boothd is started with the config file `unit-tests/booth.conf`, and
+gdb gets attached to it.
+
+Then, some ticket state is set, incoming messages are delivered, and outgoing
+messages and the state is compared to expected values.
+
+`unit-tests/_defaults.txt` has default values for the initial state and
+message data.
+
+
+Each test file consists of headers and key/value pairs:
+
+--------------------
+ticket:
+	state 		ST_STABLE
+
+message0: 		# optional comment for the log file
+        header.cmd      OP_ACCEPTING
+        ticket.id       "asdga"
+
+outgoing0:
+	header.cmd 	OP_PREPARING
+	last_ack_ballot 42
+
+finally:
+	new_ballot 	1234
+--------------------
+
+
+A few details to the the above example:
+
+* Ticket states in RAM (`ticket`, `finally`) are written in host-endianness.
+
+* Message data (`messageN`, `outgoingN`) are automatically converted via `htonl` resp. `ntohl`. They are delivered/checked in the order defined by the integer `N` component.
+
+* Strings are done via `strcpy()`
+
+* `ticket` and `messageN` are assignment chunks
+
+* `finally` and `outgoingN` are compare chunks
+
+* In `outgoingN` you can check _both_ message data (keys with a `.` in them) and ticket state
+
+* Symbolic names are useable, GDB translates them for us
+
+* The test scripts in `unit-tests/` need to be named with 3 digits, an underscore, some text, and `.txt`
+
+* The "fake" `crm_ticket` script gets the current test via `UNIT_TEST`; test scripts can pass additional information via `UNIT_TEST_AUX`.
+
+
+
+==== Tips and Hints
+
+There's another special header: `gdb__N__`. These lines are sent to GDB after
+injecting a message, but before waiting for an outgoing line. Values that
+contain `§` are sent as multiple lines to GDB.
+
+This means that a stanza like
+
+--------------------
+gdb0:
+        watch booth_conf->ticket[0].owner § commands § bt § c § end
+--------------------
+
+will cause a watchpoint to be set, and when it is triggered a backtrace (`bt`)
+is written to the log file.
+
+This makes it easy to ask for additional data or check for a call-chain when
+hitting bugs that can be reproduced via such a unit-test.
+
+
+# vim: set ft=asciidoc :

@@ -1,0 +1,61 @@
+#!/bin/bash
+# This script is part of Booth.
+# It checks whether the given resource (service) still has a chance
+# to run on the local cluster, so that booth knows whether to
+# acquire the ticket here.
+
+service="${1:?Need a resource name as first argument.}"
+if [ -z "$service" ]; then
+	@LOGGER@ "$0: bad usage: no resource name"
+	exit 1
+fi
+tmpshadow=`mktemp booth-check.XXXXXX`
+if [ $? -ne 0 -o ! -f "$tmpshadow" ]; then
+	@LOGGER@ "$0: mktemp failed"
+	exit 1
+fi
+
+trap "rm -f $tmpshadow" EXIT
+
+
+# We expect an output like
+#   p_dummy        (ocf::pacemaker:Dummy): Started geo-rz2-a
+
+status=`crm_simulate -O $tmpshadow --ticket-grant "$BOOTH_TICKET" --simulate --live-check 2>&1`
+if [ $? -ne 0 ]; then
+	@LOGGER@ "$0: crm_simulate failed"
+	@LOGGER@ "$0: crm_simulate: $status"
+	exit 1
+fi
+
+if echo "$status" |
+	sed -n '/^Revised cluster status:/,$p' |
+	egrep "^[[:space:]]+$service[[:space:]]+\(.*\):[[:space:]]+Started ([^[:space:]]+) *$" >/dev/null
+then
+	# can be started - we're done.
+	exit 0
+fi
+
+# If target-role is Stopped, it judges with being stopped explicitly.
+output=$(crm_resource --meta --get-parameter="target-role" --resource=$service 2>/dev/null)
+rc=$?
+if [ $rc -eq 0 -a "$output" = "Stopped" ]; then
+	exit 0
+fi
+
+# is ticket in standby?
+output=$(crm_ticket --ticket "$BOOTH_TICKET" --get-attr standby)
+rc=$?
+if [ $rc -eq 0 -a "$output" = true ]; then
+	exit 0
+fi
+
+# Some error occured.
+# Try to help the admin with a bit of diagnostic.
+#
+# disallow ms-resources, ie. only primitives wanted here
+if ! crm_resource -l | grep -v ":" | grep "$service" ; then
+	@LOGGER@ "Defined resource '$service' in $BOOTH_CONF_PATH is not a primitive??"
+fi
+
+exit 1

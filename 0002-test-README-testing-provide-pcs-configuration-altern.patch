@@ -1,0 +1,39 @@
+From 917429b09dcca7c7049b703a005119817a7e749a Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Jan=20Pokorn=C3=BD?= <jpokorny@redhat.com>
+Date: Fri, 27 May 2016 22:54:40 +0200
+Subject: [PATCH 2/4] test: README-testing: provide pcs configuration
+ alternatives
+
+---
+ README-testing | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/README-testing b/README-testing
+index 81c4158..ffde9bf 100644
+--- a/README-testing
++++ b/README-testing
+@@ -48,15 +48,21 @@ This is a sample pacemaker configuration for a single-node
+ cluster:
+ 
+     primitive booth ocf:pacemaker:booth-site
++    (pcs resource create booth ocf:pacemaker:booth-site)
+     primitive d-src1 ocf:heartbeat:Dummy
++    (pcs resource create d-src1 ocf:heartbeat:Dummy)
+     rsc_ticket global-d-src1 ticket-A: d-src1
++    (pcs constraint ticket add ticket-A d-src1 id=global-d-src1)
+ 
+ Additionally, you may also add an ocf:booth:sharedrsc resource to
+ also check that the ticket is granted always to only one site:
+ 
+     primitive shared ocf:booth:sharedrsc \
+             params dir="10.2.13.82:/var/tmp/boothtestdir"
++    (pcs resource create shared ocf:booth:sharedrsc \
++            dir="10.2.13.82:/var/tmp/boothtestdir")
+     rsc_ticket global-shared ticket-A: shared
++    (pcs constraint ticket add ticket-A shared id=global-shared)
+ 
+ Please adjust to your environment.
+ 
+-- 
+2.4.11
+

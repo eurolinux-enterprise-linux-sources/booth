@@ -1,0 +1,195 @@
+The Booth Cluster Ticket Manager
+=============
+    
+Booth manages tickets which authorize cluster sites located in
+geographically dispersed locations to run resources. It
+facilitates support of geographically distributed clustering in
+Pacemaker.
+    
+Booth is based on the Raft consensus algorithm. Though the
+implementation is not complete (there is no log) and there are a
+few additions and modifications, booth guarantees that a ticket
+is always available at just one site as long as it has exclusive
+control of the tickets.
+
+The git repository is available at github:
+
+<https://github.com/ClusterLabs/booth>
+
+github can also track issues or bug reports.
+
+Description of a booth cluster
+==============================
+
+Booth cluster is a collection of cooperative servers
+communicating using the booth protocol. The purpose of the booth
+cluster is to manage cluster tickets. The booth cluster consists
+of at least three servers.
+
+A booth server can be either a site or an arbitrator. Arbitrators
+take part in elections and so help resolve ties, but cannot hold
+tickets.
+
+The basic unit in the booth cluster is a ticket. Every
+non-granted ticket is in the initial state on all servers. For
+granted tickets, the server holding the ticket is the leader and
+other servers are followers. The leader issues heartbeats and
+ticket updates to the followers. The followers are required to
+obey the leader.
+
+Booth startup
+------------
+
+On startup, the booth process first loads tickets, if available,
+from the CIB. Afterwards, it broadcasts a query to get tickets'
+status from other servers. In-memory copies are updated from
+the replies if they contain newer ticket data.
+
+If the server discovers that itself is the ticket leader, it
+tries to establish its authority again by broadcasting heartbeat.
+If it succeeds, it continues as the leader for this ticket. The
+other booth servers become followers. This procedure is possible
+only immediately after the booth startup. It also serves as a
+configuration reload.
+
+Grant and revoke operations
+------------
+
+A ticket first has to be granted using the 'booth client grant'
+command.
+
+Obviously, it is not possible to grant a ticket which is
+currently granted.
+
+Ticket revoke is the operation which is the opposite of grant.
+An administrative revoke may be started at any server, but the
+operation itself happens only at the leader. If the leader is
+unreachable, the ticket cannot be revoked. The user will need to
+wait until the ticket expires.
+
+A ticket grant may be delayed if not all sites are reachable.
+The delay is the ticket expiry time extended by acquire-after, if
+set. This is to ensure that the unreachable site relinquished the
+ticket it may have been holding and stopped the corresponding
+cluster resources.
+
+If the user is absolutely sure that the unreachable site does not
+hold the ticket, the delay may be skipped by using the '-F'
+option of the 'booth grant' command.
+
+If in effect, the grant delay time is shown in the 'booth list'
+command output.
+
+Ticket management and server operation
+------------
+
+A granted ticket is managed by the booth servers so that its
+availability is maximized without breaking the basic guarantee
+that the ticket is granted to one site only.
+
+The server where the ticket is granted is the leader, the other
+servers are followers. The leader occasionally sends heartbeats,
+once every half ticket expiry under normal circumstances.
+
+If a follower doesn't hear from the leader longer than the ticket
+expiry time, it will consider the ticket lost, and try to acquire
+it by starting new elections.
+
+A server starts elections by broadcasting the REQ_VOTE RPC.
+Other servers reply with the VOTE_FOR RPC, in which they record
+its vote. Normally, the sender of the first REQ_VOTE gets the
+vote of the receiver. Whichever server gets a majority of votes
+wins the elections. On ties, elections are restarted. To
+decrease chance of elections ending in a tie, a server waits for a
+short random period before sending out the REQ_VOTE packets.
+Everything else being equal, the server which sends REQ_VOTE
+first gets elected.
+
+Elections are described in more detail in the raft paper at
+<https://ramcloud.stanford.edu/wiki/download/attachments/11370504/raft.pdf>.
+
+Ticket renewal (or update) is a two-step process. Before actually
+writing the ticket to the CIB, the server holding the ticket
+first tries to establish that it still has the majority for that
+ticket. That is done by broadcasting a heartbeat. If the server
+receives enough acknowledgements, it then stores the ticket to
+the CIB and broadcasts the UPDATE RPC with updated ticket expiry
+time so that the followers can update local ticket copies. Ticket
+renewals are configurable and by default set to half ticket
+expire time.
+
+Before ticket renewal, the leader runs one or more external
+programs if such are set in 'before-acquire-handler'. This can
+point either to a file or a directory. In the former case, that
+file is the program, but in the latter there could be a number of
+programs in the specified directory. All files which have the
+executable bit set and whose names don't start with a '.' are
+run sequentially. This program or programs should ensure that the
+cluster managed service which is protected by this ticket can run
+at this site. If any of them fails, the leader relinquishes the
+ticket. It announces its intention to step down by broadcasting
+an unsolicited VOTE_FOR with an empty vote. On receiving such RPC
+other servers start new elections to elect a new leader.
+
+Split brain
+------------
+
+On split brains two possible issues arise: leader in minority and
+follower disconnected from the leader.
+
+Let's take a look at the first one. The leader in minority
+eventually expires the ticket because it cannot receieve majority
+of acknowledgements in reply to its heartbeats. The other
+partition runs elections (at about the same time, as they find
+the ticket lost after its expiry) and, if it can get the
+majority, the elections winner becomes a new leader for the
+ticket. After split brain gets resolved, the old leader will
+become follower as soon as it receives heartbeat from the new
+leader. Note the timing: the old leader releases the ticket at
+around the same time as when new elections in the other partition
+are held. This is because the leader ensures that the ticket
+expire time is always the same on all servers in the booth
+cluster.
+
+The second situation, where a follower is disconnected from the
+leader, is a bit more difficult to handle. After the ticket
+expiry time, the follower will consider the ticket lost and start
+new elections. The elections repeatedly get restarted until the
+split brain is resolved. Then, the rest of the cluster send
+rejects in reply to REQ_VOTE RPC because the ticket is still
+valid and therefore couldn't have been lost. They know that
+because the reason for elections is included with every REQ_VOTE.
+
+Short intermittent split brains are handled well because the
+leader keeps resending heartbeats until it gets replies from all
+servers serving sites.
+
+Authentication
+==============
+
+In order to prevent malicious parties from affecting booth
+operation, booth server can authenticate both clients (connecting
+over TCP) and other booth servers (connecting over UDP). The
+authentication is based on SHA1 HMAC (Keyed-Hashing Message
+Authentication) and shared key. The HMAC implementation is
+provided by the libgcrypt or mhash library.
+
+Message encryption is not included as the information exchanged
+between various booth parties does not seem to justify that.
+
+Every message (packet) contains a hash code computed from the
+combination of payload and the secret key. Whoever has the secret
+key can then verify that the message is authentic.
+
+The shared key is used by both the booth client and the booth
+server, hence it needs to be copied to all nodes at each site and
+all arbitrators. Of course, a secure channel is required for key
+transfer. It is recommended to use csync2 or ssh.
+
+Timestamps are included and verified to fend against replay
+attacks. Certain time skew, 10 minutes by default, is tolerated.
+Packets either not older than that or with a timestamp more
+recent than the previous one from the same peer are accepted. The
+time skew can be configured in the booth configuration file.
+
+# vim: set ft=asciidoc :

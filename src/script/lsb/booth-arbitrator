@@ -1,0 +1,157 @@
+#!/bin/bash
+#
+# BOOTH daemon init script for LSB-compliant Linux distributions.
+#
+# booth-arbitrator	BOOTH arbitrator daemon
+#
+# chkconfig: - 20 20
+# processname:  boothd
+# pidfile:      /var/run/booth.pid
+# description:  Cluster Ticket Registry
+### BEGIN INIT INFO
+# Provides: booth
+# Required-Start: $network $syslog
+# Required-Stop: $network $syslog
+# Should-Start:
+# Should-Stop:
+# Default-Start: 3 5
+# Default-Stop: 0 6
+# Short-Description: start and stop BOOTH arbitrator daemon
+### END INIT INFO
+
+prog="boothd"
+exec="/usr/sbin/$prog"
+
+CONF_DIR=/etc/booth
+
+
+BOOTH_DAEMON_STARTED=0
+BOOTH_DAEMON_STARTING=1
+BOOTH_DAEMON_EXIST=2
+BOOTH_DAEMON_NOT_RUNNING=3
+BOOTH_ERROR_GENERIC=4
+OCF_ERR_GENERIC=1
+OCF_NOT_RUNNING=7
+
+. /etc/rc.status
+
+check_status() {
+	local rc
+
+	rc=$BOOTH_ERROR_GENERIC
+	eval `"$exec" status "${cnf:+-c$cnf}" ; echo rc=$?`
+	case $rc in 
+	0)
+		case  "$booth_state" in 
+		started)  return $BOOTH_DAEMON_STARTED;;
+		starting) return $BOOTH_DAEMON_STARTING;;
+		*) return $BOOTH_ERROR_GENERIC;;	
+		esac
+	;;
+	$OCF_NOT_RUNNING) return $BOOTH_DAEMON_NOT_RUNNING;;
+	$OCF_ERR_GENERIC) return $BOOTH_ERROR_GENERIC;;
+	*) return $BOOTH_ERROR_GENERIC;;
+	esac
+}
+
+status() {
+	echo -n "BOOTH daemon is "
+	if check_status; then
+		echo "running - PID $booth_lockpid for $booth_cfg_name, $booth_addr_string:$booth_port"
+		return 0
+	else
+		echo "stopped"
+		return 3
+	fi
+}
+
+start() {
+	local rc
+
+	[ -x $exec ] || exit 5
+	check_status; rc=$?
+	case "$rc" in
+	$BOOTH_DAEMON_STARTED|$BOOTH_DAEMON_STARTING|$BOOTH_DAEMON_EXIST)
+		echo "BOOTH daemon is running - PID $booth_lockpid for $booth_cfg_name, $booth_addr_string:$booth_port"
+		return 0
+		;;
+	$BOOTH_ERROR_GENERIC|$BOOTH_DAEMON_NOT_RUNNING)
+		echo -n $"Starting BOOTH arbitrator daemon: "
+		startproc $exec start "${cnf:+-c$cnf}"
+		rc_status -v
+		;;
+	*) return 1;;
+	esac
+}
+
+stop() {
+	local rc wait_time
+
+	wait_time=5
+	check_status; rc=$?
+	case $rc in
+	$BOOTH_DAEMON_STARTED);;
+	$BOOTH_DAEMON_STARTING);;
+	$BOOTH_DAEMON_EXIST);;
+	$BOOTH_DAEMON_NOT_RUNNING)
+		echo "BOOTH arbitrator daemon is not running."
+		return 0
+	;;
+	*) return 1;;
+	esac
+	
+	echo -n $"Stopping BOOTH arbitrator daemon: "
+#	$exec stop "${cnf:+-c$cnf}"
+#	sleep 1
+	pkill -TERM -s $booth_lockpid boothd
+	sleep 0.1
+	check_status; rc=$?
+	while [ $rc -ne $BOOTH_DAEMON_NOT_RUNNING -a $wait_time -gt 0 ]
+	do
+		wait_time=$((wait_time-1))
+		sleep 1
+		check_status; rc=$?
+	done
+	if [ $rc -ne $BOOTH_DAEMON_NOT_RUNNING ]; then
+		pkill -KILL -s $booth_lockpid boothd
+		sleep 1
+		check_status; rc=$?
+	fi
+	test $rc -eq $BOOTH_DAEMON_NOT_RUNNING
+	rc_status -v
+}
+
+foreach() {
+	local cnf cnf_base
+	local rc=0
+
+	for cnf in ${BOOTH_CONF_FILE:-$CONF_DIR/*.conf} ; do
+		cnf_base=`basename $cnf`
+		"$@"
+		rc=$((rc|$?))
+	done
+	return $rc
+}
+
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+	start|stop|restart)
+        foreach $1
+        ;;
+	reload|force-reload)
+        foreach restart
+        ;;
+	condrestart|try-restart)
+	[ ! -f "$booth_lockfile" ] || restart
+        ;;
+  status)
+        foreach status
+        ;;
+  *)
+        echo $"Usage: $0 {start|stop|restart|try-restart|condrestart|reload|force-reload|status}"
+        exit 2
+esac
