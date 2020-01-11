@@ -1,0 +1,20 @@
+From ef62b8cc3f0808e7e75fb608d096369e24135aa1 Mon Sep 17 00:00:00 2001
+From: Kazunori INOUE <inouekazu@intellilink.co.jp>
+Date: Mon, 2 Apr 2018 13:12:33 +0900
+Subject: [PATCH] Low: conf: Add Restart option to booth-arbitrator.service
+
+---
+ conf/booth-arbitrator.service.in | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/conf/booth-arbitrator.service.in b/conf/booth-arbitrator.service.in
+index a7a59a9..7050ae2 100644
+--- a/conf/booth-arbitrator.service.in
++++ b/conf/booth-arbitrator.service.in
+@@ -14,3 +14,6 @@ WantedBy=multi-user.target
+ Type=simple
+ @NOTIFY_ACCESS_SWITCH@NotifyAccess=main
+ ExecStart=/usr/sbin/boothd daemon -S -c /etc/booth/booth.conf
++
++# Restart options include: no, on-success, on-failure, on-abnormal, on-watchdog, on-abort, or always
++Restart=on-failure

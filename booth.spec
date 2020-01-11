@@ -22,7 +22,7 @@
 %bcond_with html_man
 %bcond_with glue
 
-%global specver 7
+%global specver 8
 %global boothver 1.0
 # set following to the actual commit or, for final release, concatenate
 # "boothver" macro to "v" (will yield a tag per the convention)
@@ -54,7 +54,7 @@
 
 Name:           booth
 Version:        %{boothver}
-Release:        %{boothrel}%{dist}
+Release:        %{boothrel}%{?dist}
 Summary:        Ticket Manager for Multi-site Clusters
 Group:          System Environment/Daemons
 License:        GPLv2+
@@ -66,10 +66,12 @@ Patch2: 0003-test-live_test-use-a-defined-literal-uniformly.patch
 Patch3: 0004-test-live_test-offer-alternatives-to-crm-pcs-native.patch
 Patch4: bz1341720-zealous-local-address-matching.patch
 Patch5: bz1366616-local_site_resolved_prevents_segfault.patch
+Patch6: https://github.com/ClusterLabs/booth/commit/ef62b8cc3f0808e7e75fb608d096369e24135aa1.patch
 
 # imposed by the same statement in pacemaker.spec
 %if 0%{?rhel} > 0
-ExclusiveArch: i686 x86_64 ppc64le s390x
+ExclusiveArch: i686 x86_64 aarch64 ppc64le s390x
+
 %endif
 
 # direct build process dependencies
@@ -191,7 +193,11 @@ Automated tests for running Booth, ticket manager for multi-site clusters.
 # BUILD #
 
 %prep
-%autosetup -n %{name}-%{commit} -S git_am
+# fix issue with acutely broken .gitignore preventing later patch application
+# (see first commit of https://github.com/ClusterLabs/booth/pull/70)
+%global __scm_setup_git(q)\
+rm -f .gitignore; %{expand:%__scm_setup_git %{-q}}
+%autosetup -n %{name}-%{commit} -S git_am -p1
 
 %build
 ./autogen.sh
@@ -274,6 +280,13 @@ VERBOSE=1 make check
 /usr/lib/ocf/resource.d/booth/sharedrsc
 
 %changelog
+* Tue Jun 26 2018 Jan Pokorný <jpokorny+rpm-booth@redhat.com> - 1.0-8.ef769ef.git
+- build for aarch64
+  Resolves: rhbz#1422615
+- fix unconditional "dist" RPM macro reference in Release field
+  Resolves: rhbz#1465933
+- ensure booth-arbitrator service will get restarted when it fails
+
 * Mon Mar 27 2017 Jan Pokorný <jpokorny+rpm-booth@redhat.com> - 1.0-7.ef769ef.git
 - build for ppc64le
   Resolves: rhbz#1402563
